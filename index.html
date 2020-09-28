@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>SANKEY Experiment</title>
+<style>
+  body {
+    font-family: Arial;
+  }
+.node rect {
+  cursor: move;
+  fill-opacity: .9;
+  shape-rendering: crispEdges;
+}
+
+.node text {
+  pointer-events: none;
+  color: #58585a;
+  text-shadow: 0 1px 0 #fff;
+}
+
+
+    .tooltip {
+    position: absolute;
+    top: 100px;
+    left: 100px;
+    -moz-border-radius:5px;
+    border-radius: 5px;
+    border: 2px solid #000;
+    background: #fff;
+    opacity: .9;
+    color: black;
+    padding: 10px;
+    font-size: 12px;
+    z-index: 10;
+    max-width:200px;
+    }
+
+		.node:hover {
+			stroke-opacity: .2;
+		}
+		.link {
+		  fill: none;
+		  stroke: #000;
+		  stroke-opacity: .16;
+		  transition-property: stroke-opacity;
+		  transition-duration: 0.5s;
+		}
+		.link:hover {
+		  stroke-opacity: .5;
+		}
+    .node{
+      transition-property: opacity;
+      transition-duration: 0.2s;
+    }
+
+</style>
+<body>
+
+<p id="chart">
+
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-tip/0.9.1/d3-tip.js"></script>
+<script src="sankey.js"></script>
+<script src='tooltip.js'></script>
+<script>
+
+var tooltip = floatingTooltip('gates_tooltip', 240);
+
+
+var margin = {top: 40, right: 10, bottom: 10, left: 10},
+    width = 1200 - margin.left - margin.right,
+    height = 800 - margin.top - margin.bottom;
+
+var formatNumber = d3.format(",.0f"),    // zero decimal places
+    formatMillions = d3.format(",.4s"),    // millions, 1 decimal place
+    formatFactor = d3.format(",.2f"),    // 2 decimal places
+    format = function(d) { return formatNumber(d); },
+    color = d3.scaleOrdinal(d3.schemeCategory20);
+
+// append the svg canvas to the page
+var svg = d3.select("#chart").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .append("g").attr("class","wrapper")
+    .attr("transform",
+          "translate(" + margin.left + "," + margin.top + ")");
+
+// Set the sankey diagram properties
+var sankey = d3.sankey()
+    .nodeWidth(100)
+    .nodePadding(40)
+    .size([width, height]);
+
+
+
+// return the links with curvature, based on d.source.x , d.source.y, d.target.x, d.target.y
+var path = sankey.link();
+
+console.log(path)
+
+// load the data (using the timelyportfolio csv method)
+
+var uniqueNodes = ["OECD institutions","Projects in OECD home countries","Projects in OECD international","Projects in non-OECD international","non-OECD institutions","Projects in non-OECD home countries","Green energy and mitigation of GHG emissions","Adaptation to climate change","Both mitigation and adaptation","Other environment"]
+var nodeColors = ["#99b7b4","#99b7b4","#99b7b4","#b2cdca","#b2cdca","#b2cdca","#63c59c","#d2eada","#63c59c","#d6d7d9"]
+var nodeColor = d3.scaleOrdinal().domain(uniqueNodes).range(nodeColors);
+
+d3.csv("sankey.csv", function(error, data) {
+
+  //set up graph in same style as original example but empty
+  graph = {"nodes" : [], "links" : []};
+
+    data.forEach(function (d) {
+      graph.nodes.push({ "name": d.source,"source_value": d.count});
+      graph.nodes.push({ "name": d.target,"target_value": d.count});
+      graph.links.push({ "source": d.source,
+                         "target": d.target,
+                         "value": +d.count});
+     });
+
+     // return only the distinct / unique nodes
+  	graph.nodes = d3.nest()
+    		.key( function(d) { return d.name; })
+    		.rollup(function(d){
+          // console.log("rollup", d);
+					return {
+      		"name": d[0].name,
+          "source_value": d3.sum(d, function(dd) { return dd.source_value; }),
+      		"target_value": d3.sum(d, function(dd) { return dd.target_value; })
+    		}})
+    		.entries(graph.nodes);
+
+        // console.log(graph.nodes)
+
+  	graph.nodekeys = graph.nodes.map(function(d){ return d.key });
+    // the names of the nodes
+
+    //uniqueNames = graph.nodekeys;
+
+    //console.log(graph)//graph now includes linkes, nodes and nodekeys
+
+     //now it is: source, target, value
+     //it appears d3 with force layout wants a numeric source and target
+     //so loop through each link replacing the text with its index from node
+     graph.links.forEach(function (d, i) {
+       graph.links[i].source = graph.nodekeys.indexOf(graph.links[i].source);
+       //The indexOf() method returns the position of the first occurrence of a specified value in a string
+       graph.links[i].target = graph.nodekeys.indexOf(graph.links[i].target);
+     });
+     //now it is: source, target, value, dy, sy, ty
+
+
+     //now loop through each nodes to make nodes an array of objects
+     //rather than an array of strings
+
+     graph.nodes.forEach(function (d, i) {
+       graph.nodes[i] = d.value;
+     });
+     // if don't do this then would be key instead of name
+
+
+  sankey
+    .nodes(graph.nodes)
+    .links(graph.links)
+    .layout(2);
+//Computes the node and link positions for the given arguments, returning a graph representing the Sankey layout.
+
+
+// add in the links
+  var link = svg.append("g").selectAll(".link")
+      .data(graph.links)
+      .enter().append("path") //from sankey.links above
+      .attr("class", "link")
+      .attr("d", path)
+      .style("stroke-width", function(d) { return Math.max(2, d.dy); })
+      .style('stroke-opacity', 0.7)
+      .style("mix-blend-mode", "multiply")
+      .sort(function(a, b) { return b.dy - a.dy; })
+      .on('mouseover', showValue)
+      .on('mouseout', hideValue);
+
+
+// add in the nodes
+  var node = svg.append("g").selectAll(".node")
+      .data(graph.nodes)
+    .enter().append("g")
+      .attr("class", "node")
+      .attr("transform", function(d) {
+          return "translate(" + d.x + "," + d.y + ")";
+      })
+      .on('mouseover', showDetail)
+      .on('mouseout', hideDetail)
+      .call(d3.drag()
+        .subject(function(d) { return d; })
+        .on("start", function() { this.parentNode.appendChild(this); })
+        .on("drag", dragmove));
+
+// add the rectangles for the nodes
+  node.append("rect")
+      .attr("height", function(d, i) { return d.dy; })
+      .attr("width", sankey.nodeWidth())
+      .attr("id",function(d){
+        var name = d.name;
+        name = name.replaceAll(" ","");
+        name = name.replaceAll("-","");
+        return name;
+      })
+      .style("fill", function(d) {
+		  return d.color = nodeColor(d.name); })
+      .style("stroke", function(d) {
+		  return d3.rgb(d.color).darker(1); })
+
+// add in the title for the nodes
+  node.append("text")
+      .attr("x", sankey.nodeWidth()-6)
+      .attr("y", function(d) { return d.dy / 2; })
+      .attr("dy", ".35em")
+      .attr("text-anchor", "end")
+      .attr("fill","#58585a")
+      .attr("font-weight","bold")
+      .attr("transform", null)
+      .text(function(d) { return d.name; })
+    .filter(function(d) { return d.x < width / 2; })
+      .attr("x",6) //, 6 + sankey.nodeWidth()
+      .attr("text-anchor", "start");
+
+
+      // add in the title for the nodes
+        node.append("text")
+            .attr("x", 6)
+            .attr("y", function(d) { return d.dy / 2+20; })
+            .attr("dy", ".35em")
+            .attr("text-anchor", "start")
+            .attr("fill","#58585a")
+            .attr("font-weight","regular")
+          .filter(function(d) { return d.name=="non-OECD institutions" || d.name=="OECD institutions"; })
+            .text(function(d) { return "$"+Math.round(d.source_value*100)/100+" billion"; })
+
+      // add in the title for the nodes
+        node.append("text")
+            .attr("x", 6)
+            .attr("y", function(d) { return d.dy / 2+20; })
+            .attr("dy", ".35em")
+            .attr("text-anchor", "start")
+            .attr("fill","#58585a")
+            .attr("font-weight","regular")
+          .filter(function(d) { return d.name=="Green energy and mitigation of GHG emissions" || d.name=="Adaptation to climate change" || d.name=="Both mitigation and adaptation" || d.name=="Other environment"; })
+            .text(function(d) { return "$"+Math.round(d.target_value*100)/100+" billion"; })
+          .filter(function(d) { return d.name=="Both mitigation and adaptation" || d.name=="Other environment"; })
+            .attr("y", function(d) { return d.dy / 2-20; })
+
+
+      // append a defs (for definition) element to your SVG
+      var defs = svg.append('defs');
+
+
+      var text1 = "SOURCE OF FINANCE";
+      var text2 = "GEOGRAPHIC DESTINATION";
+      var text3 = "END USE OF FINANCE";
+
+      var x1Pos = document.querySelector("#nonOECDinstitutions").getBoundingClientRect().x;
+      var x2Pos = document.querySelector("#ProjectsinnonOECDhomecountries").getBoundingClientRect().x;
+      var x3Pos = document.querySelector("#GreenenergyandmitigationofGHGemissions").getBoundingClientRect().x;
+
+      svg
+      .append("text")
+          .attr("x", x1Pos-15)
+          .attr("y", -10)
+          .attr("text-anchor", "start")
+          .attr("fill","#58585a")
+          .attr("font-weight","bold")
+          .text(text1)
+
+      svg
+      .append("text")
+          .attr("x", x2Pos+30)
+          .attr("y", -10)
+          .attr("text-anchor", "middle")
+          .attr("fill","#58585a")
+          .attr("font-weight","bold")
+          .text(text2)
+
+
+      svg
+      .append("text")
+          .attr("x", x3Pos)
+          .attr("y", -10)
+          .attr("text-anchor", "middle")
+          .attr("fill","#58585a")
+          .attr("font-weight","bold")
+          .text(text3)
+
+
+
+      link.style("stroke",function(d){
+        return d.target.color;
+      });
+
+
+
+// the function for moving the nodes
+  function dragmove(d) {
+    d3.select(this)
+      .attr("transform",
+            "translate("
+               + d.x + ","
+               + (d.y = Math.max(
+                  0, Math.min(height - d.dy, d3.event.y))
+                 ) + ")");
+    sankey.relayout();
+    link.attr("d", path);
+  }
+
+  function showDetail(d) {
+    d3.select(this)
+        .style('opacity', 0.9);
+
+    var text = "";
+    if(d.name.includes('OECD')){
+      text = 'The Organization for Economic Co-operation and Development is an intergovernmental economic organization with 37 member countries, founded in 1961 to stimulate economic progress and world trade';
+    }else{
+      text = 'to be added'
+    }
+    var content = '<span><b>' + text + '</b></span>';
+
+    tooltip.showTooltip(content, d3.event);
+  }
+  /*
+   * Hides tooltip
+   */
+  function hideDetail(d) {
+      d3.select(this)
+          .style('opacity', 1);
+      tooltip.hideTooltip();
+  }
+
+  function showValue(d,i) {
+    console.log(d)
+    d3.select(this)
+        .style('stroke-opacity', 0.3);
+
+    var content = '<span><b>$' + d.value + ' billion</b></span>';
+
+    tooltip.showTooltip(content, d3.event);
+  }
+
+  function hideValue(d) {
+
+    d3.select(this)
+        .style('stroke-opacity', 0.6);
+    tooltip.hideTooltip();
+  }
+
+
+});
+
+</script>
+
+</body>
+</html>
